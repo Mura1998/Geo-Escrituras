@@ -1,0 +1,6 @@
+flask
+flask-cors
+pytesseract
+Pillow
+PyMuPDF
+gunicorn
