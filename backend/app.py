@@ -1,18 +1,37 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import pytesseract
 from PIL import Image
 import io
 import fitz
 import re
+import pdfkit
+import os
 
 app = Flask(__name__)
 CORS(app)
 
+# Diccionario ampliado de palabras a números
 palabras_a_numeros = {
-    "cuarenta y cinco": 45,
-    "cincuenta": 50,
-    "setenta": 70,
+    "cero": 0,
+    "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9,
+    "diez": 10, "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15,
+    "dieciséis": 16, "diecisiete": 17, "dieciocho": 18, "diecinueve": 19,
+    "veinte": 20, "veintiuno": 21, "veintidós": 22, "veintitrés": 23,
+    "veinticuatro": 24, "veinticinco": 25, "veintiséis": 26, "veintisiete": 27,
+    "veintiocho": 28, "veintinueve": 29,
+    "treinta": 30, "treinta y uno": 31, "treinta y dos": 32, "treinta y tres": 33,
+    "cuarenta": 40, "cuarenta y cinco": 45, "cuarenta y ocho": 48,
+    "cincuenta": 50, "cincuenta y cinco": 55,
+    "sesenta": 60, "sesenta y cinco": 65,
+    "setenta": 70, "setenta y cinco": 75,
+    "ochenta": 80, "ochenta y cinco": 85,
+    "noventa": 90, "noventa y cinco": 95,
+    "cien": 100, "ciento cinco": 105, "ciento diez": 110, "ciento veinte": 120,
+    "ciento treinta": 130, "ciento cincuenta": 150, "ciento ochenta": 180,
+    "doscientos": 200, "doscientos veinte": 220, "doscientos setenta": 270,
+    "trescientos": 300, "trescientos sesenta": 360
 }
 
 def convertir_palabra_a_numero(frase):
@@ -21,9 +40,8 @@ def convertir_palabra_a_numero(frase):
 def extraer_datos_tecnicos(texto):
     texto = texto.replace('\n', ' ')
     patrones = re.findall(
-        r"rumbo (norte|sur) ([a-z\s]+) grados (este|oeste).*?distancia de ([a-z\s]+) metros",
-        texto, flags=re.IGNORECASE
-    )
+        r"rumbo\s+(norte|sur)\s+([a-záéíóú\s]+?)\s+grados\s+(este|oeste)[^\d\w]+distancia\s+(?:de\s+)?([a-záéíóú\s]+?)\s+metros",
+        texto, flags=re.IGNORECASE)
     resultado = []
     for dir1, grados_txt, dir2, dist_txt in patrones:
         grados = convertir_palabra_a_numero(grados_txt)
@@ -40,25 +58,32 @@ def extraer_datos_tecnicos(texto):
 @app.route('/extraer-escritura', methods=['POST'])
 def procesar_escritura():
     archivo = request.files['archivo']
+    texto = ""
     if archivo.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-        imagen = Image.open(archivo.stream)
+        imagen = Image.open(archivo.stream).convert('L')
+        imagen = imagen.point(lambda x: 0 if x < 150 else 255)
         texto = pytesseract.image_to_string(imagen, lang='spa')
+
     elif archivo.filename.lower().endswith('.pdf'):
         pdf = fitz.open(stream=archivo.read(), filetype="pdf")
-        pagina = pdf.load_page(0)
-        pix = pagina.get_pixmap(dpi=300)
-        imagen = Image.open(io.BytesIO(pix.tobytes("png")))
-        texto = pytesseract.image_to_string(imagen, lang='spa')
+        for pagina in pdf:
+            pix = pagina.get_pixmap(dpi=300)
+            imagen = Image.open(io.BytesIO(pix.tobytes("png"))).convert('L')
+            imagen = imagen.point(lambda x: 0 if x < 150 else 255)
+            texto += pytesseract.image_to_string(imagen, lang='spa') + "\n"
+
     else:
         return jsonify({"error": "Tipo de archivo no soportado"}), 400
 
+    if not texto.strip():
+        return jsonify({"error": "No se pudo extraer texto del archivo."}), 400
+
     datos = extraer_datos_tecnicos(texto)
+    if not datos:
+        return jsonify({"error": "No se detectaron datos técnicos en el texto extraído."}), 400
+
     return jsonify({"texto_extraido": texto, "datos_tecnicos": datos})
 
-if __name__ == '__main__':
-    import os
-port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port)
 @app.route('/comparar-escritura-plano', methods=['POST'])
 def comparar_escritura_con_plano():
     import math
@@ -68,7 +93,7 @@ def comparar_escritura_con_plano():
 
     def calcular_rumbo_y_longitud(x1, y1, x2, y2):
         dx = x2 - x1
-        dy = y1 - y2  # invertimos Y por convención gráfica
+        dy = y1 - y2
         longitud = round((dx**2 + dy**2) ** 0.5, 2)
         angulo = (math.degrees(math.atan2(abs(dx), abs(dy))) if dy != 0 else 90)
 
@@ -114,3 +139,30 @@ def comparar_escritura_con_plano():
 
     return jsonify({"comparacion": resultados})
 
+@app.route('/generar-reporte', methods=['POST'])
+def generar_reporte_pdf():
+    data = request.get_json()
+    comparacion = data.get('comparacion', [])
+
+    html = """
+    <h1>Informe de Confrontación de Escritura y Plano</h1>
+    <table border='1' cellpadding='5' cellspacing='0'>
+        <tr>
+            <th>#</th>
+            <th>Rumbo Escritura</th>
+            <th>Rumbo Plano</th>
+            <th>Coincide</th>
+        </tr>
+    """
+    for i, item in enumerate(comparacion):
+        coincide = "✅" if item["coincide"] else "❌"
+        html += f"<tr><td>{i+1}</td><td>{item['escritura']}</td><td>{item['plano']}</td><td>{coincide}</td></tr>"
+
+    html += "</table>"
+    output_path = "reporte_confrontacion.pdf"
+    pdfkit.from_string(html, output_path)
+    return send_file(output_path, as_attachment=True)
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
