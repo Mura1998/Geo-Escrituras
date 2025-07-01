@@ -59,3 +59,58 @@ if __name__ == '__main__':
     import os
 port = int(os.environ.get("PORT", 5000))
 app.run(host="0.0.0.0", port=port)
+@app.route('/comparar-escritura-plano', methods=['POST'])
+def comparar_escritura_con_plano():
+    import math
+    data = request.get_json()
+    escritura = data.get("escritura", [])
+    plano = data.get("plano", [])
+
+    def calcular_rumbo_y_longitud(x1, y1, x2, y2):
+        dx = x2 - x1
+        dy = y1 - y2  # invertimos Y por convención gráfica
+        longitud = round((dx**2 + dy**2) ** 0.5, 2)
+        angulo = (math.degrees(math.atan2(abs(dx), abs(dy))) if dy != 0 else 90)
+
+        if dx >= 0 and dy >= 0:
+            rumbo = f"N{round(angulo)}°E"
+        elif dx >= 0 and dy < 0:
+            rumbo = f"S{round(angulo)}°E"
+        elif dx < 0 and dy < 0:
+            rumbo = f"S{round(angulo)}°W"
+        else:
+            rumbo = f"N{round(angulo)}°W"
+
+        return rumbo, angulo, longitud
+
+    resultados = []
+    for idx, dato in enumerate(escritura):
+        if idx >= len(plano):
+            resultados.append({
+                "escritura": dato["rumbo"],
+                "plano": "No hay línea",
+                "coincide": False
+            })
+            continue
+
+        seg = plano[idx]
+        rumbo_plano, angulo, distancia = calcular_rumbo_y_longitud(seg["x1"], seg["y1"], seg["x2"], seg["y2"])
+
+        coincide_rumbo = abs(angulo - dato["grados"]) <= 5
+        coincide_dist = abs(distancia - dato["distancia"]) <= 5
+
+        resultados.append({
+            "escritura": f'{dato["rumbo"]}, {dato["distancia"]} m',
+            "plano": f'{rumbo_plano}, {round(distancia, 1)} px',
+            "coincide": coincide_rumbo and coincide_dist,
+            "detalles": {
+                "rumbo_aprox": rumbo_plano,
+                "angulo": round(angulo, 1),
+                "distancia_px": distancia,
+                "coincide_rumbo": coincide_rumbo,
+                "coincide_distancia": coincide_dist
+            }
+        })
+
+    return jsonify({"comparacion": resultados})
+
