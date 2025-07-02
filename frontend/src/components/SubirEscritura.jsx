@@ -63,7 +63,26 @@ export default function SubirEscritura() {
     }
 
     setCargando(false);
-  };
+  }; 
+  
+const testUpload = async () => {
+  if (!escritura) return toast.warn('Selecciona el archivo de escritura');
+
+  const formData = new FormData();
+  formData.append('archivo', escritura);
+
+  try {
+    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/test-upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error inesperado');
+    toast.success(data.mensaje);
+  } catch (error) {
+    toast.error(error.message);
+  }
+};
 
   const enviarPlano = async () => {
     if (!plano) return toast.warn('Selecciona el archivo del plano');
@@ -152,6 +171,7 @@ export default function SubirEscritura() {
       <div style={{ marginBottom: 16 }}>
         <label><strong>Escritura (PDF o imagen):</strong></label><br />
         <input type="file" accept=".pdf,image/*" onChange={(e) => handleArchivoChange(e, 'escritura')} />
+        <button onClick={testUpload}>🔎 Testear subida</button>
         <button onClick={enviarEscritura} disabled={cargando} style={{ marginTop: 8 }}>
           {cargando ? '⏳ Procesando...' : 'Analizar escritura'}
         </button>
