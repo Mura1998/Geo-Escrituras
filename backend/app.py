@@ -186,6 +186,21 @@ def generar_reporte_pdf():
     pdfkit.from_string(html, output_path)
     return send_file(output_path, as_attachment=True)
 
+@app.route('/test-upload', methods=['POST'])
+def test_upload():
+    try:
+        archivo = request.files['archivo']
+        nombre = archivo.filename
+        size = len(archivo.read())
+
+        print("---- TEST DE SUBIDA ----")
+        print(f"Archivo recibido: {nombre}, tamaño: {size} bytes")
+
+        return jsonify({"mensaje": f"Archivo recibido correctamente: {nombre}, tamaño: {size} bytes"})
+    except Exception as e:
+        print("Error en /test-upload:", str(e))
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
