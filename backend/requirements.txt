@@ -1,7 +1,9 @@
-flask
+Flask
 flask-cors
-pytesseract
-Pillow
 PyMuPDF
+Pillow
+opencv-python-headless
+numpy
+pytesseract
 gunicorn
 pdfkit

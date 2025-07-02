@@ -166,3 +166,54 @@ def generar_reporte_pdf():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    import cv2
+import numpy as np
+
+@app.route('/extraer-plano', methods=['POST'])
+def extraer_plano():
+    archivo = request.files['archivo']
+
+    if not archivo or not archivo.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "Se requiere un archivo PDF"}), 400
+
+    try:
+        pdf = fitz.open(stream=archivo.read(), filetype="pdf")
+        pagina = pdf[0]  # Solo procesamos la primera página
+        pix = pagina.get_pixmap(dpi=300)
+        img_bytes = pix.tobytes("png")
+
+        # Convertimos imagen a OpenCV (matriz numpy)
+        img_pil = Image.open(io.BytesIO(img_bytes)).convert("L")
+        img_np = np.array(img_pil)
+
+        # Procesamos con OpenCV
+        _, img_bin = cv2.threshold(img_np, 150, 255, cv2.THRESH_BINARY_INV)
+        edges = cv2.Canny(img_bin, 50, 150, apertureSize=3)
+
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1,
+            theta=np.pi/180,
+            threshold=80,
+            minLineLength=50,
+            maxLineGap=10
+        )
+
+        segmentos = []
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                longitud_px = round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, 2)
+                segmentos.append({
+                    "x1": x1, "y1": y1,
+                    "x2": x2, "y2": y2,
+                    "longitud_px": longitud_px
+                })
+
+        if not segmentos:
+            return jsonify({"error": "No se detectaron líneas en el plano"}), 400
+
+        return jsonify({"segmentos_detectados": segmentos})
+
+    except Exception as e:
+        return jsonify({"error": f"Error procesando el plano: {str(e)}"}), 500
