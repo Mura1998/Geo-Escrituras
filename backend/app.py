@@ -38,17 +38,24 @@ def convertir_palabra_a_numero(frase):
     return palabras_a_numeros.get(frase.strip().lower(), 0)
 
 def extraer_datos_tecnicos(texto):
-    texto = texto.replace('\n', ' ')
+    texto = texto.replace('\n', ' ').lower()
+    
     patrones = re.findall(
-        r"rumbo\s+(norte|sur)\s+([a-záéíóú\s]+?)\s+grados\s+(este|oeste)[^\d\w]+distancia\s+(?:de\s+)?([a-záéíóú\s]+?)\s+metros",
+        r"rumbo\s+(norte|sur)\s+([a-záéíóú\s]+?)\s+grados(?:\s+([a-záéíóú\s]+?)\s+minutos)?(?:\s+([a-záéíóú\s]+?)\s+segundos)?\s+(este|oeste)[^a-z0-9]+distancia\s+(?:de\s+)?([a-záéíóú\s]+?)\s+metros",
         texto, flags=re.IGNORECASE)
+
     resultado = []
-    for dir1, grados_txt, dir2, dist_txt in patrones:
+    for dir1, grados_txt, min_txt, seg_txt, dir2, dist_txt in patrones:
         grados = convertir_palabra_a_numero(grados_txt)
+        minutos = convertir_palabra_a_numero(min_txt or "cero")
+        segundos = convertir_palabra_a_numero(seg_txt or "cero")
         distancia = convertir_palabra_a_numero(dist_txt)
+
+        grados_decimal = grados + minutos / 60 + segundos / 3600
+
         resultado.append({
-            "rumbo": f"{dir1[0].upper()}{grados}°{dir2[0].upper()}",
-            "grados": grados,
+            "rumbo": f"{dir1[0].upper()}{round(grados_decimal, 2)}°{dir2[0].upper()}",
+            "grados": round(grados_decimal, 2),
             "dir1": dir1[0].upper(),
             "dir2": dir2[0].upper(),
             "distancia": distancia
@@ -57,32 +64,48 @@ def extraer_datos_tecnicos(texto):
 
 @app.route('/extraer-escritura', methods=['POST'])
 def procesar_escritura():
-    archivo = request.files['archivo']
-    texto = ""
-    if archivo.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-        imagen = Image.open(archivo.stream).convert('L')
-        imagen = imagen.point(lambda x: 0 if x < 150 else 255)
-        texto = pytesseract.image_to_string(imagen, lang='spa')
+    try:
+        archivo = request.files['archivo']
+        texto = ""
 
-    elif archivo.filename.lower().endswith('.pdf'):
-        pdf = fitz.open(stream=archivo.read(), filetype="pdf")
-        for pagina in pdf:
-            pix = pagina.get_pixmap(dpi=300)
-            imagen = Image.open(io.BytesIO(pix.tobytes("png"))).convert('L')
+        if archivo.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+            imagen = Image.open(archivo.stream).convert('L')
             imagen = imagen.point(lambda x: 0 if x < 150 else 255)
-            texto += pytesseract.image_to_string(imagen, lang='spa') + "\n"
+            texto = pytesseract.image_to_string(imagen, lang='spa')
 
-    else:
-        return jsonify({"error": "Tipo de archivo no soportado"}), 400
+        elif archivo.filename.lower().endswith('.pdf'):
+            pdf = fitz.open(stream=archivo.read(), filetype="pdf")
+            for pagina in pdf:
+                pix = pagina.get_pixmap(dpi=300)
+                imagen = Image.open(io.BytesIO(pix.tobytes("png"))).convert('L')
+                imagen = imagen.point(lambda x: 0 if x < 150 else 255)
+                texto += pytesseract.image_to_string(imagen, lang='spa') + "\n"
+        else:
+            return jsonify({"error": "Tipo de archivo no soportado"}), 400
 
-    if not texto.strip():
-        return jsonify({"error": "No se pudo extraer texto del archivo."}), 400
+        print("Texto extraído del OCR:\n", texto)
 
-    datos = extraer_datos_tecnicos(texto)
-    if not datos:
-        return jsonify({"error": "No se detectaron datos técnicos en el texto extraído."}), 400
+        if not texto.strip():
+            return jsonify({"error": "No se pudo extraer texto del archivo."}), 400
 
-    return jsonify({"texto_extraido": texto, "datos_tecnicos": datos})
+        datos = extraer_datos_tecnicos(texto)
+
+        print("Datos técnicos extraídos:", datos)
+
+        if not datos:
+            return jsonify({
+                "error": "No se detectaron datos técnicos en el texto extraído.",
+                "texto_extraido": texto
+            }), 400
+
+        return jsonify({
+            "texto_extraido": texto,
+            "datos_tecnicos": datos
+        })
+
+    except Exception as e:
+        print("ERROR FATAL:", str(e))
+        return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
 
 @app.route('/comparar-escritura-plano', methods=['POST'])
 def comparar_escritura_con_plano():
