@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
 export default function SubirEscritura() {
   const [escritura, setEscritura] = useState(null);
   const [plano, setPlano] = useState(null);
@@ -49,7 +51,7 @@ export default function SubirEscritura() {
     setPlanoCargado(false);
 
     try {
-      const data = await fetchConError(`${import.meta.env.VITE_BACKEND_URL}/extraer-escritura`, {
+      const data = await fetchConError(`${BACKEND_URL}/extraer-escritura`, {
         method: 'POST',
         body: formData
       });
@@ -58,31 +60,29 @@ export default function SubirEscritura() {
       setDatos(data.datos_tecnicos || []);
       setEscrituraCargada(true);
       toast.success('✅ Escritura cargada con éxito');
-    } catch (error) {
-      // Ya manejado por fetchConError
-    }
+    } catch {}
 
     setCargando(false);
-  }; 
-  
-const testUpload = async () => {
-  if (!escritura) return toast.warn('Selecciona el archivo de escritura');
+  };
 
-  const formData = new FormData();
-  formData.append('archivo', escritura);
+  const testUpload = async () => {
+    if (!escritura) return toast.warn('Selecciona el archivo de escritura');
 
-  try {
-    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/test-upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error inesperado');
-    toast.success(data.mensaje);
-  } catch (error) {
-    toast.error(error.message);
-  }
-};
+    const formData = new FormData();
+    formData.append('archivo', escritura);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/test-upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error inesperado');
+      toast.success(data.mensaje);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
 
   const enviarPlano = async () => {
     if (!plano) return toast.warn('Selecciona el archivo del plano');
@@ -96,7 +96,7 @@ const testUpload = async () => {
     setPlanoCargado(false);
 
     try {
-      const data = await fetchConError(`${import.meta.env.VITE_BACKEND_URL}/extraer-plano`, {
+      const data = await fetchConError(`${BACKEND_URL}/extraer-plano`, {
         method: 'POST',
         body: formData
       });
@@ -104,16 +104,14 @@ const testUpload = async () => {
       setSegmentos(data.segmentos_detectados || []);
       setPlanoCargado(true);
       toast.success('✅ Plano cargado con éxito');
-    } catch (error) {
-      // Ya manejado
-    }
+    } catch {}
 
     setCargando(false);
   };
 
   const descargarReporte = async (comparacionData) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/generar-reporte`, {
+      const res = await fetch(`${BACKEND_URL}/generar-reporte`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comparacion: comparacionData }),
@@ -143,7 +141,7 @@ const testUpload = async () => {
     setCargando(true);
     setMensajeReporte('');
     try {
-      const data = await fetchConError(`${import.meta.env.VITE_BACKEND_URL}/comparar-escritura-plano`, {
+      const data = await fetchConError(`${BACKEND_URL}/comparar-escritura-plano`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -152,13 +150,9 @@ const testUpload = async () => {
         }),
       });
       setComparacion(data.comparacion || []);
+      if (data.comparacion) await descargarReporte(data.comparacion);
+    } catch {}
 
-      if (data.comparacion) {
-        await descargarReporte(data.comparacion);
-      }
-    } catch (error) {
-      // Ya manejado
-    }
     setCargando(false);
   };
 
