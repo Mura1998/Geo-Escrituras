@@ -7,6 +7,8 @@ import fitz
 import re
 import pdfkit
 import os
+import cv2
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
@@ -39,7 +41,6 @@ def convertir_palabra_a_numero(frase):
 
 def extraer_datos_tecnicos(texto):
     texto = texto.replace('\n', ' ').lower()
-    
     patrones = re.findall(
         r"rumbo\s+(norte|sur)\s+([a-záéíóú\s]+?)\s+grados(?:\s+([a-záéíóú\s]+?)\s+minutos)?(?:\s+([a-záéíóú\s]+?)\s+segundos)?\s+(este|oeste)[^a-z0-9]+distancia\s+(?:de\s+)?([a-záéíóú\s]+?)\s+metros",
         texto, flags=re.IGNORECASE)
@@ -62,6 +63,10 @@ def extraer_datos_tecnicos(texto):
         })
     return resultado
 
+@app.route("/")
+def home():
+    return "Servidor activo ✅", 200
+
 @app.route('/extraer-escritura', methods=['POST'])
 def procesar_escritura():
     try:
@@ -83,14 +88,10 @@ def procesar_escritura():
         else:
             return jsonify({"error": "Tipo de archivo no soportado"}), 400
 
-        print("Texto extraído del OCR:\n", texto)
-
         if not texto.strip():
             return jsonify({"error": "No se pudo extraer texto del archivo."}), 400
 
         datos = extraer_datos_tecnicos(texto)
-
-        print("Datos técnicos extraídos:", datos)
 
         if not datos:
             return jsonify({
@@ -106,6 +107,46 @@ def procesar_escritura():
     except Exception as e:
         print("ERROR FATAL:", str(e))
         return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
+
+@app.route('/extraer-plano', methods=['POST'])
+def extraer_plano():
+    archivo = request.files['archivo']
+
+    if not archivo or not archivo.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "Se requiere un archivo PDF"}), 400
+
+    try:
+        pdf = fitz.open(stream=archivo.read(), filetype="pdf")
+        pagina = pdf[0]
+        pix = pagina.get_pixmap(dpi=300)
+        img_bytes = pix.tobytes("png")
+
+        img_pil = Image.open(io.BytesIO(img_bytes)).convert("L")
+        img_np = np.array(img_pil)
+
+        _, img_bin = cv2.threshold(img_np, 150, 255, cv2.THRESH_BINARY_INV)
+        edges = cv2.Canny(img_bin, 50, 150, apertureSize=3)
+
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=10)
+
+        segmentos = []
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                longitud_px = round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, 2)
+                segmentos.append({
+                    "x1": x1, "y1": y1,
+                    "x2": x2, "y2": y2,
+                    "longitud_px": longitud_px
+                })
+
+        if not segmentos:
+            return jsonify({"error": "No se detectaron líneas en el plano"}), 400
+
+        return jsonify({"segmentos_detectados": segmentos})
+
+    except Exception as e:
+        return jsonify({"error": f"Error procesando el plano: {str(e)}"}), 500
 
 @app.route('/comparar-escritura-plano', methods=['POST'])
 def comparar_escritura_con_plano():
@@ -204,54 +245,3 @@ def test_upload():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    import cv2
-import numpy as np
-
-@app.route('/extraer-plano', methods=['POST'])
-def extraer_plano():
-    archivo = request.files['archivo']
-
-    if not archivo or not archivo.filename.lower().endswith('.pdf'):
-        return jsonify({"error": "Se requiere un archivo PDF"}), 400
-
-    try:
-        pdf = fitz.open(stream=archivo.read(), filetype="pdf")
-        pagina = pdf[0]  # Solo procesamos la primera página
-        pix = pagina.get_pixmap(dpi=300)
-        img_bytes = pix.tobytes("png")
-
-        # Convertimos imagen a OpenCV (matriz numpy)
-        img_pil = Image.open(io.BytesIO(img_bytes)).convert("L")
-        img_np = np.array(img_pil)
-
-        # Procesamos con OpenCV
-        _, img_bin = cv2.threshold(img_np, 150, 255, cv2.THRESH_BINARY_INV)
-        edges = cv2.Canny(img_bin, 50, 150, apertureSize=3)
-
-        lines = cv2.HoughLinesP(
-            edges,
-            rho=1,
-            theta=np.pi/180,
-            threshold=80,
-            minLineLength=50,
-            maxLineGap=10
-        )
-
-        segmentos = []
-        if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                longitud_px = round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, 2)
-                segmentos.append({
-                    "x1": x1, "y1": y1,
-                    "x2": x2, "y2": y2,
-                    "longitud_px": longitud_px
-                })
-
-        if not segmentos:
-            return jsonify({"error": "No se detectaron líneas en el plano"}), 400
-
-        return jsonify({"segmentos_detectados": segmentos})
-
-    except Exception as e:
-        return jsonify({"error": f"Error procesando el plano: {str(e)}"}), 500

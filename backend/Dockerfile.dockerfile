@@ -11,19 +11,23 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxrender1 \
     libxext6 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Crea carpeta de trabajo
+# Establece el directorio de trabajo
 WORKDIR /app
 
-# Copia todo el proyecto
-COPY . /app
+# Copia primero los requirements
+COPY requirements.txt ./
 
-# Instala las dependencias de Python
+# Instala dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto
+# Luego copia el resto del código
+COPY . .
+
+# Expone el puerto
 EXPOSE 5000
 
-# Arrancar el servidor Flask
-CMD ["python", "app.py"]
+# Usa gunicorn para producción
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
