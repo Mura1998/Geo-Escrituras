@@ -1,9 +1,6 @@
-Flask
-flask-cors
+flask
 gunicorn
-numpy
-opencv-python-headless
-pdfkit
-Pillow
+flask-cors
+opencv-python
 pytesseract
-PyMuPDF
+pdf2image
