@@ -1,247 +1,161 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-import pytesseract
-from PIL import Image
-import io
-import fitz
-import re
-import pdfkit
 import os
+import fitz  # PyMuPDF
+import pytesseract
 import cv2
 import numpy as np
+from PIL import Image
+import io
+import base64
+import tempfile
+import pdfkit
 
 app = Flask(__name__)
 CORS(app)
 
-# Diccionario ampliado de palabras a números
-palabras_a_numeros = {
-    "cero": 0,
-    "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
-    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9,
-    "diez": 10, "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15,
-    "dieciséis": 16, "diecisiete": 17, "dieciocho": 18, "diecinueve": 19,
-    "veinte": 20, "veintiuno": 21, "veintidós": 22, "veintitrés": 23,
-    "veinticuatro": 24, "veinticinco": 25, "veintiséis": 26, "veintisiete": 27,
-    "veintiocho": 28, "veintinueve": 29,
-    "treinta": 30, "treinta y uno": 31, "treinta y dos": 32, "treinta y tres": 33,
-    "cuarenta": 40, "cuarenta y cinco": 45, "cuarenta y ocho": 48,
-    "cincuenta": 50, "cincuenta y cinco": 55,
-    "sesenta": 60, "sesenta y cinco": 65,
-    "setenta": 70, "setenta y cinco": 75,
-    "ochenta": 80, "ochenta y cinco": 85,
-    "noventa": 90, "noventa y cinco": 95,
-    "cien": 100, "ciento cinco": 105, "ciento diez": 110, "ciento veinte": 120,
-    "ciento treinta": 130, "ciento cincuenta": 150, "ciento ochenta": 180,
-    "doscientos": 200, "doscientos veinte": 220, "doscientos setenta": 270,
-    "trescientos": 300, "trescientos sesenta": 360
-}
+# Configuración general
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB máximo
+ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 
-def convertir_palabra_a_numero(frase):
-    return palabras_a_numeros.get(frase.strip().lower(), 0)
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
-def extraer_datos_tecnicos(texto):
-    texto = texto.replace('\n', ' ').lower()
-    patrones = re.findall(
-        r"rumbo\s+(norte|sur)\s+([a-záéíóú\s]+?)\s+grados(?:\s+([a-záéíóú\s]+?)\s+minutos)?(?:\s+([a-záéíóú\s]+?)\s+segundos)?\s+(este|oeste)[^a-z0-9]+distancia\s+(?:de\s+)?([a-záéíóú\s]+?)\s+metros",
-        texto, flags=re.IGNORECASE)
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    resultado = []
-    for dir1, grados_txt, min_txt, seg_txt, dir2, dist_txt in patrones:
-        grados = convertir_palabra_a_numero(grados_txt)
-        minutos = convertir_palabra_a_numero(min_txt or "cero")
-        segundos = convertir_palabra_a_numero(seg_txt or "cero")
-        distancia = convertir_palabra_a_numero(dist_txt)
-
-        grados_decimal = grados + minutos / 60 + segundos / 3600
-
-        resultado.append({
-            "rumbo": f"{dir1[0].upper()}{round(grados_decimal, 2)}°{dir2[0].upper()}",
-            "grados": round(grados_decimal, 2),
-            "dir1": dir1[0].upper(),
-            "dir2": dir2[0].upper(),
-            "distancia": distancia
-        })
-    return resultado
-
-@app.route("/")
-def home():
-    return "Servidor activo ✅", 200
+@app.route('/')
+def index():
+    return "Geo Escrituras API funcionando"
 
 @app.route('/extraer-escritura', methods=['POST'])
-def procesar_escritura():
+def extraer_escritura():
     try:
+        if 'archivo' not in request.files:
+            return jsonify({'error': 'No se envió ningún archivo'}), 400
+
         archivo = request.files['archivo']
-        texto = ""
 
-        if archivo.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-            imagen = Image.open(archivo.stream).convert('L')
-            imagen = imagen.point(lambda x: 0 if x < 150 else 255)
-            texto = pytesseract.image_to_string(imagen, lang='spa')
+        if archivo.filename == '':
+            return jsonify({'error': 'Nombre de archivo vacío'}), 400
 
-        elif archivo.filename.lower().endswith('.pdf'):
-            pdf = fitz.open(stream=archivo.read(), filetype="pdf")
-            for pagina in pdf:
-                pix = pagina.get_pixmap(dpi=300)
-                imagen = Image.open(io.BytesIO(pix.tobytes("png"))).convert('L')
-                imagen = imagen.point(lambda x: 0 if x < 150 else 255)
-                texto += pytesseract.image_to_string(imagen, lang='spa') + "\n"
-        else:
-            return jsonify({"error": "Tipo de archivo no soportado"}), 400
+        if not allowed_file(archivo.filename):
+            return jsonify({'error': 'Formato de archivo no permitido'}), 400
 
-        if not texto.strip():
-            return jsonify({"error": "No se pudo extraer texto del archivo."}), 400
+        filename = 'escritura.pdf'
+        ruta = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        archivo.save(ruta)
 
-        datos = extraer_datos_tecnicos(texto)
+        texto_extraido = extraer_texto_pdf(ruta)
 
-        if not datos:
-            return jsonify({
-                "error": "No se detectaron datos técnicos en el texto extraído.",
-                "texto_extraido": texto
-            }), 400
-
-        return jsonify({
-            "texto_extraido": texto,
-            "datos_tecnicos": datos
-        })
-
+        return jsonify({'texto': texto_extraido})
     except Exception as e:
-        print("ERROR FATAL:", str(e))
-        return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
+        print(f"[ERROR] extraer_escritura: {e}")
+        return jsonify({'error': 'Error procesando el archivo de escritura'}), 500
 
 @app.route('/extraer-plano', methods=['POST'])
 def extraer_plano():
-    archivo = request.files['archivo']
-
-    if not archivo or not archivo.filename.lower().endswith('.pdf'):
-        return jsonify({"error": "Se requiere un archivo PDF"}), 400
-
     try:
-        pdf = fitz.open(stream=archivo.read(), filetype="pdf")
-        pagina = pdf[0]
-        pix = pagina.get_pixmap(dpi=300)
-        img_bytes = pix.tobytes("png")
+        if 'archivo' not in request.files:
+            return jsonify({'error': 'No se envió ningún archivo'}), 400
 
-        img_pil = Image.open(io.BytesIO(img_bytes)).convert("L")
-        img_np = np.array(img_pil)
+        archivo = request.files['archivo']
 
-        _, img_bin = cv2.threshold(img_np, 150, 255, cv2.THRESH_BINARY_INV)
-        edges = cv2.Canny(img_bin, 50, 150, apertureSize=3)
+        if archivo.filename == '':
+            return jsonify({'error': 'Nombre de archivo vacío'}), 400
 
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=10)
+        if not allowed_file(archivo.filename):
+            return jsonify({'error': 'Formato de archivo no permitido'}), 400
+
+        filename = 'plano.pdf'
+        ruta = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        archivo.save(ruta)
+
+        segmentos = detectar_segmentos_plano(ruta)
+
+        return jsonify({'segmentos': segmentos})
+    except Exception as e:
+        print(f"[ERROR] extraer_plano: {e}")
+        return jsonify({'error': 'Error procesando el plano'}), 500
+
+@app.route('/comparar-escritura-plano', methods=['POST'])
+def comparar_escritura_plano():
+    try:
+        data = request.get_json()
+        escritura = data.get('escritura', [])
+        plano = data.get('plano', [])
+
+        comparacion = []
+        for i in range(min(len(escritura), len(plano))):
+            item_esc = escritura[i]
+            item_pla = plano[i]
+            resultado = {
+                'escritura': item_esc,
+                'plano': item_pla,
+                'coincide': item_esc == item_pla
+            }
+            comparacion.append(resultado)
+
+        return jsonify({'comparacion': comparacion})
+    except Exception as e:
+        print(f"[ERROR] comparar_escritura_plano: {e}")
+        return jsonify({'error': 'Error al comparar datos'}), 500
+
+@app.route('/generar-reporte', methods=['POST'])
+def generar_reporte():
+    try:
+        data = request.get_json()
+        comparacion = data.get('comparacion', [])
+
+        html = "<h1>Reporte de Comparación</h1><table border='1'><tr><th>Escritura</th><th>Plano</th><th>Coincide</th></tr>"
+        for item in comparacion:
+            html += f"<tr><td>{item['escritura']}</td><td>{item['plano']}</td><td>{'✔️' if item['coincide'] else '❌'}</td></tr>"
+        html += "</table>"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            pdfkit.from_string(html, tmp.name)
+            return send_file(tmp.name, as_attachment=True, download_name="reporte.pdf")
+    except Exception as e:
+        print(f"[ERROR] generar_reporte: {e}")
+        return jsonify({'error': 'Error al generar el reporte'}), 500
+
+def extraer_texto_pdf(path):
+    texto_total = ""
+    try:
+        with fitz.open(path) as doc:
+            for pagina in doc:
+                texto_total += pagina.get_text()
+        return texto_total
+    except Exception as e:
+        print(f"[ERROR] extraer_texto_pdf: {e}")
+        return ""
+
+def detectar_segmentos_plano(path):
+    try:
+        doc = fitz.open(path)
+        pix = doc.load_page(0).get_pixmap(dpi=300)
+        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+            image.save(tmp_img.name)
+            img = cv2.imread(tmp_img.name)
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
 
         segmentos = []
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
-                longitud_px = round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, 2)
-                segmentos.append({
-                    "x1": x1, "y1": y1,
-                    "x2": x2, "y2": y2,
-                    "longitud_px": longitud_px
-                })
+                segmentos.append({'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
 
-        if not segmentos:
-            return jsonify({"error": "No se detectaron líneas en el plano"}), 400
-
-        return jsonify({"segmentos_detectados": segmentos})
-
+        return segmentos
     except Exception as e:
-        return jsonify({"error": f"Error procesando el plano: {str(e)}"}), 500
-
-@app.route('/comparar-escritura-plano', methods=['POST'])
-def comparar_escritura_con_plano():
-    import math
-    data = request.get_json()
-    escritura = data.get("escritura", [])
-    plano = data.get("plano", [])
-
-    def calcular_rumbo_y_longitud(x1, y1, x2, y2):
-        dx = x2 - x1
-        dy = y1 - y2
-        longitud = round((dx**2 + dy**2) ** 0.5, 2)
-        angulo = (math.degrees(math.atan2(abs(dx), abs(dy))) if dy != 0 else 90)
-
-        if dx >= 0 and dy >= 0:
-            rumbo = f"N{round(angulo)}°E"
-        elif dx >= 0 and dy < 0:
-            rumbo = f"S{round(angulo)}°E"
-        elif dx < 0 and dy < 0:
-            rumbo = f"S{round(angulo)}°W"
-        else:
-            rumbo = f"N{round(angulo)}°W"
-
-        return rumbo, angulo, longitud
-
-    resultados = []
-    for idx, dato in enumerate(escritura):
-        if idx >= len(plano):
-            resultados.append({
-                "escritura": dato["rumbo"],
-                "plano": "No hay línea",
-                "coincide": False
-            })
-            continue
-
-        seg = plano[idx]
-        rumbo_plano, angulo, distancia = calcular_rumbo_y_longitud(seg["x1"], seg["y1"], seg["x2"], seg["y2"])
-
-        coincide_rumbo = abs(angulo - dato["grados"]) <= 5
-        coincide_dist = abs(distancia - dato["distancia"]) <= 5
-
-        resultados.append({
-            "escritura": f'{dato["rumbo"]}, {dato["distancia"]} m',
-            "plano": f'{rumbo_plano}, {round(distancia, 1)} px',
-            "coincide": coincide_rumbo and coincide_dist,
-            "detalles": {
-                "rumbo_aprox": rumbo_plano,
-                "angulo": round(angulo, 1),
-                "distancia_px": distancia,
-                "coincide_rumbo": coincide_rumbo,
-                "coincide_distancia": coincide_dist
-            }
-        })
-
-    return jsonify({"comparacion": resultados})
-
-@app.route('/generar-reporte', methods=['POST'])
-def generar_reporte_pdf():
-    data = request.get_json()
-    comparacion = data.get('comparacion', [])
-
-    html = """
-    <h1>Informe de Confrontación de Escritura y Plano</h1>
-    <table border='1' cellpadding='5' cellspacing='0'>
-        <tr>
-            <th>#</th>
-            <th>Rumbo Escritura</th>
-            <th>Rumbo Plano</th>
-            <th>Coincide</th>
-        </tr>
-    """
-    for i, item in enumerate(comparacion):
-        coincide = "✅" if item["coincide"] else "❌"
-        html += f"<tr><td>{i+1}</td><td>{item['escritura']}</td><td>{item['plano']}</td><td>{coincide}</td></tr>"
-
-    html += "</table>"
-    output_path = "reporte_confrontacion.pdf"
-    pdfkit.from_string(html, output_path)
-    return send_file(output_path, as_attachment=True)
-
-@app.route('/test-upload', methods=['POST'])
-def test_upload():
-    try:
-        archivo = request.files['archivo']
-        nombre = archivo.filename
-        size = len(archivo.read())
-
-        print("---- TEST DE SUBIDA ----")
-        print(f"Archivo recibido: {nombre}, tamaño: {size} bytes")
-
-        return jsonify({"mensaje": f"Archivo recibido correctamente: {nombre}, tamaño: {size} bytes"})
-    except Exception as e:
-        print("Error en /test-upload:", str(e))
-        return jsonify({"error": str(e)}), 500
+        print(f"[ERROR] detectar_segmentos_plano: {e}")
+        return []
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=False, host='0.0.0.0', port=5000)
