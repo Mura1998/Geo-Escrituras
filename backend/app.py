@@ -50,8 +50,15 @@ def extraer_plano():
     segmentos = detectar_segmentos(filepath)
     return jsonify({'segmentos': segmentos})
 
+@app.route('/test-upload', methods=['POST'])
+def test_upload():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No se recibió archivo'}), 400
+    archivo = request.files['file']
+    return jsonify({'mensaje': f'Archivo {archivo.filename} recibido correctamente'}), 200
+
 @app.route('/test-upload/<tipo>', methods=['GET'])
-def test_upload(tipo):
+def test_upload_tipo(tipo):
     for filename in os.listdir(UPLOAD_FOLDER):
         if tipo in filename:
             return jsonify({'estado': 'ok'})
