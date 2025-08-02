@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+console.log('BACKEND_URL:', BACKEND_URL);
 
 export default function SubirEscritura() {
   const [escritura, setEscritura] = useState(null);
