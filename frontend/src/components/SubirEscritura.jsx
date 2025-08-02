@@ -43,7 +43,7 @@ export default function SubirEscritura() {
     if (!escritura) return toast.warn('Selecciona el archivo de escritura');
 
     const formData = new FormData();
-    formData.append('archivo', escritura);
+    formData.append('file', escritura);
 
     setCargando(true);
     setMensajeReporte('');
@@ -69,7 +69,7 @@ export default function SubirEscritura() {
     if (!escritura) return toast.warn('Selecciona el archivo de escritura');
 
     const formData = new FormData();
-    formData.append('archivo', escritura);
+    formData.append('file', escritura);
 
     try {
       const res = await fetch(`${BACKEND_URL}/test-upload`, {
