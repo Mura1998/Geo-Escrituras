@@ -1,33 +1,28 @@
-# Imagen base
+# Imagen base liviana con Python
 FROM python:3.10-slim
 
-# Instala Tesseract y dependencias necesarias
+# Instala Tesseract y dependencias del sistema
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
-    libtesseract-dev \
-    poppler-utils \
-    libgl1 \
     libglib2.0-0 \
     libsm6 \
-    libxrender1 \
     libxext6 \
+    libxrender-dev \
+    poppler-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Establece el directorio de trabajo
+# Establece directorio de trabajo
 WORKDIR /app
 
-# Copia primero los requirements
-COPY requirements.txt ./
-
-# Instala dependencias
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Luego copia el resto del código
+# Copia todos los archivos del backend
 COPY . .
 
-# Expone el puerto
-EXPOSE 5000
+# Instala dependencias de Python
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Usa gunicorn para producción
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Expone el puerto
+EXPOSE 10000
+
+# Comando para iniciar la app
+CMD ["python", "app.py"]
