@@ -3,7 +3,6 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-console.log('BACKEND_URL:', BACKEND_URL);
 
 export default function SubirEscritura() {
   const [escritura, setEscritura] = useState(null);
@@ -21,7 +20,7 @@ export default function SubirEscritura() {
     try {
       const res = await fetch(url, opciones);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error inesperado");
+      if (!res.ok) throw new Error(data.error || 'Error inesperado');
       return data;
     } catch (err) {
       toast.error(err.message);
@@ -33,10 +32,14 @@ export default function SubirEscritura() {
     if (tipo === 'escritura') {
       setEscritura(e.target.files[0]);
       setEscrituraCargada(false);
-      setPlanoCargado(false);
+      setTexto('');
+      setDatos([]);
+      setComparacion([]);
     } else if (tipo === 'plano') {
       setPlano(e.target.files[0]);
       setPlanoCargado(false);
+      setSegmentos([]);
+      setComparacion([]);
     }
   };
 
@@ -48,13 +51,11 @@ export default function SubirEscritura() {
 
     setCargando(true);
     setMensajeReporte('');
-    setEscrituraCargada(false);
-    setPlanoCargado(false);
 
     try {
       const data = await fetchConError(`${BACKEND_URL}/extraer-escritura`, {
         method: 'POST',
-        body: formData
+        body: formData,
       });
 
       setTexto(data.texto_extraido || '');
@@ -75,17 +76,41 @@ export default function SubirEscritura() {
 
     setCargando(true);
     setMensajeReporte('');
-    setPlanoCargado(false);
 
     try {
       const data = await fetchConError(`${BACKEND_URL}/extraer-plano`, {
         method: 'POST',
-        body: formData
+        body: formData,
       });
 
       setSegmentos(data.segmentos_detectados || []);
       setPlanoCargado(true);
       toast.success('✅ Plano cargado con éxito');
+    } catch {}
+
+    setCargando(false);
+  };
+
+  const compararEscrituraPlano = async () => {
+    if (!escrituraCargada || !planoCargado || datos.length === 0 || segmentos.length === 0) {
+      return toast.warn('Debes analizar primero la escritura y el plano.');
+    }
+
+    setCargando(true);
+    setMensajeReporte('');
+
+    try {
+      const data = await fetchConError(`${BACKEND_URL}/comparar-escritura-plano`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          escritura: datos,
+          plano: segmentos,
+        }),
+      });
+
+      setComparacion(data.comparacion || []);
+      if (data.comparacion?.length) await descargarReporte(data.comparacion);
     } catch {}
 
     setCargando(false);
@@ -98,6 +123,7 @@ export default function SubirEscritura() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comparacion: comparacionData }),
       });
+
       if (!res.ok) throw new Error('Error generando reporte');
 
       const blob = await res.blob();
@@ -115,40 +141,13 @@ export default function SubirEscritura() {
     }
   };
 
-  const compararEscrituraPlano = async () => {
-    console.log('escrituraCargada:', escrituraCargada);
-    console.log('planoCargado:', planoCargado);
-    console.log('datos:', datos);
-    console.log('segmentos:', segmentos);
-
-    if (!escrituraCargada || !planoCargado || !Array.isArray(datos) || datos.length === 0 || !Array.isArray(segmentos) || segmentos.length === 0) {
-      return toast.warn("Debes analizar primero la escritura y el plano.");
-    }
-
-    setCargando(true);
-    setMensajeReporte('');
-    try {
-      const data = await fetchConError(`${BACKEND_URL}/comparar-escritura-plano`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          escritura: datos,
-          plano: segmentos,
-        }),
-      });
-      setComparacion(data.comparacion || []);
-      if (data.comparacion) await descargarReporte(data.comparacion);
-    } catch {}
-
-    setCargando(false);
-  };
-
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: 20 }}>
       <ToastContainer position="top-right" autoClose={4000} />
 
       <h2>Subir Escritura y Plano</h2>
 
+      {/* Escritura */}
       <div style={{ marginBottom: 16 }}>
         <label><strong>Escritura (PDF o imagen):</strong></label><br />
         <input type="file" accept=".pdf,image/*" onChange={(e) => handleArchivoChange(e, 'escritura')} />
@@ -158,6 +157,7 @@ export default function SubirEscritura() {
         {escrituraCargada && <p style={{ color: 'green' }}>✅ Escritura cargada con éxito</p>}
       </div>
 
+      {/* Plano */}
       <div style={{ marginBottom: 16 }}>
         <label><strong>Plano (PDF escaneado):</strong></label><br />
         <input type="file" accept=".pdf" onChange={(e) => handleArchivoChange(e, 'plano')} />
@@ -167,6 +167,7 @@ export default function SubirEscritura() {
         {planoCargado && <p style={{ color: 'green' }}>✅ Plano cargado con éxito</p>}
       </div>
 
+      {/* Comparar */}
       <div style={{ marginTop: 16 }}>
         <button
           onClick={compararEscrituraPlano}
@@ -176,12 +177,14 @@ export default function SubirEscritura() {
         </button>
       </div>
 
+      {/* Reporte */}
       {mensajeReporte && (
         <div style={{ marginTop: 16, color: 'green', fontWeight: 'bold' }}>
           {mensajeReporte}
         </div>
       )}
 
+      {/* Texto extraído */}
       {texto && (
         <div style={{ marginTop: 24 }}>
           <h3>Texto extraído de escritura:</h3>
@@ -189,6 +192,7 @@ export default function SubirEscritura() {
         </div>
       )}
 
+      {/* Datos técnicos */}
       {datos.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <h3>Rumbos y distancias detectados:</h3>
@@ -202,6 +206,7 @@ export default function SubirEscritura() {
         </div>
       )}
 
+      {/* Segmentos */}
       {segmentos.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <h3>Segmentos detectados en el plano:</h3>
@@ -215,6 +220,7 @@ export default function SubirEscritura() {
         </div>
       )}
 
+      {/* Comparación */}
       {comparacion.length > 0 && (
         <div style={{ marginTop: 32 }}>
           <h3>Resultado de la comparación:</h3>
