@@ -151,9 +151,13 @@ export default function SubirEscritura() {
   };
 
   const compararEscrituraPlano = async () => {
+    console.log('escrituraCargada:', escrituraCargada);
+    console.log('planoCargado:', planoCargado);
+    console.log('datos:', datos);
+    console.log('segmentos:', segmentos);
+
     if (!escrituraCargada || !planoCargado || !Array.isArray(datos) || datos.length === 0 || !Array.isArray(segmentos) || segmentos.length === 0) {
       return toast.warn("Debes analizar primero la escritura y el plano.");
-    }
 
     setCargando(true);
     setMensajeReporte('');
