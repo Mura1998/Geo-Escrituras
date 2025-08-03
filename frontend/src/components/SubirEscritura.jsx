@@ -90,7 +90,7 @@ export default function SubirEscritura() {
     if (!escrituraCargada) return toast.warn('Primero debes cargar la escritura');
 
     const formData = new FormData();
-    formData.append('archivo', plano);
+    formData.append('file', plano);
 
     setCargando(true);
     setMensajeReporte('');
