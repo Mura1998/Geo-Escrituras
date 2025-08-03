@@ -1,4 +1,3 @@
-// (Dejamos tu importación y configuración inicial igual)
 import { useState } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -181,10 +180,93 @@ export default function SubirEscritura() {
     setCargando(false);
   };
 
-  // JSX original sin cambios (se mantiene igual)
   return (
-    // ...
-    // tu mismo JSX completo como ya lo tienes, no lo cambié
-    // ...
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: 20 }}>
+      <ToastContainer position="top-right" autoClose={4000} />
+
+      <h2>Subir Escritura y Plano</h2>
+
+      <div style={{ marginBottom: 16 }}>
+        <label><strong>Escritura (PDF o imagen):</strong></label><br />
+        <input type="file" accept=".pdf,image/*" onChange={(e) => handleArchivoChange(e, 'escritura')} />
+        <button onClick={testUpload}>🔎 Testear subida</button>
+        <button onClick={enviarEscritura} disabled={cargando} style={{ marginTop: 8 }}>
+          {cargando ? '⏳ Procesando...' : 'Analizar escritura'}
+        </button>
+        {escrituraCargada && <p style={{ color: 'green' }}>✅ Escritura cargada con éxito</p>}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label><strong>Plano (PDF escaneado):</strong></label><br />
+        <input type="file" accept=".pdf" onChange={(e) => handleArchivoChange(e, 'plano')} />
+        <button onClick={enviarPlano} disabled={cargando || !escrituraCargada} style={{ marginTop: 8 }}>
+          {cargando ? '⏳ Procesando...' : 'Analizar plano'}
+        </button>
+        {planoCargado && <p style={{ color: 'green' }}>✅ Plano cargado con éxito</p>}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <button
+          onClick={compararEscrituraPlano}
+          disabled={!escrituraCargada || !planoCargado || cargando}
+        >
+          Comparar escritura con plano
+        </button>
+      </div>
+
+      {mensajeReporte && (
+        <div style={{ marginTop: 16, color: 'green', fontWeight: 'bold' }}>
+          {mensajeReporte}
+        </div>
+      )}
+
+      {texto && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Texto extraído de escritura:</h3>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{texto}</pre>
+        </div>
+      )}
+
+      {datos.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Rumbos y distancias detectados:</h3>
+          <ul>
+            {datos.map((item, i) => (
+              <li key={i}>
+                <strong>Rumbo:</strong> {item.rumbo} — <strong>Distancia:</strong> {item.distancia} m
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {segmentos.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Segmentos detectados en el plano:</h3>
+          <ul>
+            {segmentos.map((s, i) => (
+              <li key={i}>
+                ({s.x1}, {s.y1}) → ({s.x2}, {s.y2}) — <strong>Longitud:</strong> {s.longitud_px} px
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {comparacion.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <h3>Resultado de la comparación:</h3>
+          <ul>
+            {comparacion.map((item, i) => (
+              <li key={i} style={{ color: item.coincide ? 'green' : 'red' }}>
+                <strong>Escritura:</strong> {item.escritura} <br />
+                <strong>Plano:</strong> {item.plano} <br />
+                <strong>¿Coincide?</strong> {item.coincide ? '✅ Sí' : '❌ No'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
