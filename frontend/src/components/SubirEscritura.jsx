@@ -24,22 +24,18 @@ export default function SubirEscritura() {
       if (!res.ok) throw new Error(data.error || "Error inesperado");
       return data;
     } catch (err) {
-      console.error('❌ Error al hacer fetch:', err.message);
       toast.error(err.message);
       throw err;
     }
   };
 
   const handleArchivoChange = (e, tipo) => {
-    const archivo = e.target.files[0];
     if (tipo === 'escritura') {
-      console.log('📄 Escritura seleccionada:', archivo);
-      setEscritura(archivo);
+      setEscritura(e.target.files[0]);
       setEscrituraCargada(false);
       setPlanoCargado(false);
     } else if (tipo === 'plano') {
-      console.log('📐 Plano seleccionado:', archivo);
-      setPlano(archivo);
+      setPlano(e.target.files[0]);
       setPlanoCargado(false);
     }
   };
@@ -61,38 +57,13 @@ export default function SubirEscritura() {
         body: formData
       });
 
-      console.log('✅ Texto extraído:', data.texto_extraido);
-      console.log('📐 Datos técnicos extraídos:', data.datos_tecnicos);
-
       setTexto(data.texto_extraido || '');
       setDatos(data.datos_tecnicos || []);
       setEscrituraCargada(true);
       toast.success('✅ Escritura cargada con éxito');
-    } catch (err) {
-      console.error('❌ Falló al procesar escritura:', err);
-    }
+    } catch {}
 
     setCargando(false);
-  };
-
-  const testUpload = async () => {
-    if (!escritura) return toast.warn('Selecciona el archivo de escritura');
-
-    const formData = new FormData();
-    formData.append('file', escritura);
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/test-upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error inesperado');
-      toast.success(data.mensaje);
-    } catch (error) {
-      console.error('❌ Fallo en test-upload:', error.message);
-      toast.error(error.message);
-    }
   };
 
   const enviarPlano = async () => {
@@ -112,21 +83,16 @@ export default function SubirEscritura() {
         body: formData
       });
 
-      console.log('📏 Segmentos detectados:', data.segmentos_detectados);
-
       setSegmentos(data.segmentos_detectados || []);
       setPlanoCargado(true);
       toast.success('✅ Plano cargado con éxito');
-    } catch (err) {
-      console.error('❌ Falló al procesar plano:', err);
-    }
+    } catch {}
 
     setCargando(false);
   };
 
   const descargarReporte = async (comparacionData) => {
     try {
-      console.log('📤 Enviando comparación para generar reporte...');
       const res = await fetch(`${BACKEND_URL}/generar-reporte`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,7 +111,6 @@ export default function SubirEscritura() {
 
       setMensajeReporte('📄 Reporte PDF descargado exitosamente.');
     } catch (error) {
-      console.error('❌ Error al generar o descargar reporte:', error);
       toast.error('❌ Error al descargar el reporte PDF');
     }
   };
@@ -158,12 +123,11 @@ export default function SubirEscritura() {
 
     if (!escrituraCargada || !planoCargado || !Array.isArray(datos) || datos.length === 0 || !Array.isArray(segmentos) || segmentos.length === 0) {
       return toast.warn("Debes analizar primero la escritura y el plano.");
+    }
 
     setCargando(true);
     setMensajeReporte('');
-
     try {
-      console.log('📊 Comparando escritura y plano...');
       const data = await fetchConError(`${BACKEND_URL}/comparar-escritura-plano`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,14 +136,9 @@ export default function SubirEscritura() {
           plano: segmentos,
         }),
       });
-
-      console.log('📈 Resultado comparación:', data.comparacion);
-
       setComparacion(data.comparacion || []);
       if (data.comparacion) await descargarReporte(data.comparacion);
-    } catch (err) {
-      console.error('❌ Error en la comparación:', err);
-    }
+    } catch {}
 
     setCargando(false);
   };
@@ -193,7 +152,6 @@ export default function SubirEscritura() {
       <div style={{ marginBottom: 16 }}>
         <label><strong>Escritura (PDF o imagen):</strong></label><br />
         <input type="file" accept=".pdf,image/*" onChange={(e) => handleArchivoChange(e, 'escritura')} />
-        <button onClick={testUpload}>🔎 Testear subida</button>
         <button onClick={enviarEscritura} disabled={cargando} style={{ marginTop: 8 }}>
           {cargando ? '⏳ Procesando...' : 'Analizar escritura'}
         </button>
