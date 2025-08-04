@@ -33,7 +33,11 @@ def extraer_escritura():
     file.save(filepath)
 
     texto = extraer_texto(filepath)
-    return jsonify({'texto': texto})
+    datos_tecnicos = texto.split('\n')
+    return jsonify({
+        'texto_extraido': texto,
+        'datos_tecnicos': datos_tecnicos
+    })
 
 @app.route('/extraer-plano', methods=['POST'])
 def extraer_plano():
@@ -48,7 +52,9 @@ def extraer_plano():
     file.save(filepath)
 
     segmentos = detectar_segmentos(filepath)
-    return jsonify({'segmentos': segmentos})
+    return jsonify({
+        'segmentos_detectados': segmentos
+    })
 
 @app.route('/test-upload', methods=['POST'])
 def test_upload():
