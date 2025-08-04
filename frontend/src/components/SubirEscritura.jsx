@@ -60,6 +60,7 @@ export default function SubirEscritura() {
 
       setTexto(data.texto_extraido || '');
       setDatos(data.datos_tecnicos || []);
+      console.log('📘 datos_tecnicos:', data.datos_tecnicos);
       setEscrituraCargada(true);
       toast.success('✅ Escritura cargada con éxito');
     } catch {}
@@ -84,6 +85,7 @@ export default function SubirEscritura() {
       });
 
       setSegmentos(data.segmentos_detectados || []);
+      console.log('📐 segmentos_detectados:', data.segmentos_detectados);
       setPlanoCargado(true);
       toast.success('✅ Plano cargado con éxito');
     } catch {}
