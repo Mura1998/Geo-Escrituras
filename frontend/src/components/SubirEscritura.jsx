@@ -1,242 +1,142 @@
-import { useState } from 'react';
-import { ToastContainer, toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import React, { useState } from "react";
+import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
-export default function SubirEscritura() {
+const SubirEscritura = () => {
   const [escritura, setEscritura] = useState(null);
   const [plano, setPlano] = useState(null);
-  const [texto, setTexto] = useState('');
-  const [datos, setDatos] = useState([]);
-  const [segmentos, setSegmentos] = useState([]);
-  const [comparacion, setComparacion] = useState([]);
-  const [cargando, setCargando] = useState(false);
-  const [mensajeReporte, setMensajeReporte] = useState('');
-  const [escrituraCargada, setEscrituraCargada] = useState(false);
-  const [planoCargado, setPlanoCargado] = useState(false);
+  const [datosEscritura, setDatosEscritura] = useState(null);
+  const [datosPlano, setDatosPlano] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [mensaje, setMensaje] = useState("");
 
-  const fetchConError = async (url, opciones = {}) => {
-    try {
-      const res = await fetch(url, opciones);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error inesperado');
-      return data;
-    } catch (err) {
-      toast.error(err.message);
-      throw err;
-    }
-  };
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
-  const handleArchivoChange = (e, tipo) => {
-    if (tipo === 'escritura') {
+  const handleFileChange = (e, tipo) => {
+    if (tipo === "escritura") {
       setEscritura(e.target.files[0]);
-      setEscrituraCargada(false);
-      setTexto('');
-      setDatos([]);
-      setComparacion([]);
-    } else if (tipo === 'plano') {
+    } else {
       setPlano(e.target.files[0]);
-      setPlanoCargado(false);
-      setSegmentos([]);
-      setComparacion([]);
     }
   };
 
-  const enviarEscritura = async () => {
-    if (!escritura) return toast.warn('Selecciona el archivo de escritura');
+  const subirEscritura = async () => {
+    if (!escritura) return setMensaje("⚠️ Selecciona un archivo de escritura");
+    setMensaje("⏳ Subiendo escritura...");
 
     const formData = new FormData();
-    formData.append('file', escritura);
-
-    setCargando(true);
-    setMensajeReporte('');
+    formData.append("file", escritura);
 
     try {
-      const data = await fetchConError(`${BACKEND_URL}/extraer-escritura`, {
-        method: 'POST',
-        body: formData,
+      const res = await axios.post(`${backendUrl}/extraer-escritura`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-
-      setTexto(data.texto_extraido || '');
-      setDatos(data.datos_tecnicos || []);
-      console.log('📘 datos_tecnicos:', data.datos_tecnicos);
-      setEscrituraCargada(true);
-      toast.success('✅ Escritura cargada con éxito');
-    } catch {}
-
-    setCargando(false);
-  };
-
-  const enviarPlano = async () => {
-    if (!plano) return toast.warn('Selecciona el archivo del plano');
-    if (!escrituraCargada) return toast.warn('Primero debes cargar la escritura');
-
-    const formData = new FormData();
-    formData.append('file', plano);
-
-    setCargando(true);
-    setMensajeReporte('');
-
-    try {
-      const data = await fetchConError(`${BACKEND_URL}/extraer-plano`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      setSegmentos(data.segmentos_detectados || []);
-      console.log('📐 segmentos_detectados:', data.segmentos_detectados);
-      setPlanoCargado(true);
-      toast.success('✅ Plano cargado con éxito');
-    } catch {}
-
-    setCargando(false);
-  };
-
-  const compararEscrituraPlano = async () => {
-    if (!escrituraCargada || !planoCargado || datos.length === 0 || segmentos.length === 0) {
-      return toast.warn('Debes analizar primero la escritura y el plano.');
+      setDatosEscritura(res.data);
+      setMensaje("✅ Escritura procesada con éxito");
+    } catch (err) {
+      console.error(err);
+      setMensaje("❌ Error al procesar escritura");
     }
-
-    setCargando(true);
-    setMensajeReporte('');
-
-    try {
-      const data = await fetchConError(`${BACKEND_URL}/comparar-escritura-plano`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          escritura: datos,
-          plano: segmentos,
-        }),
-      });
-
-      setComparacion(data.comparacion || []);
-      if (data.comparacion?.length) await descargarReporte(data.comparacion);
-    } catch {}
-
-    setCargando(false);
   };
 
-  const descargarReporte = async (comparacionData) => {
+  const subirPlano = async () => {
+    if (!plano) return setMensaje("⚠️ Selecciona un archivo de plano");
+    setMensaje("⏳ Subiendo plano...");
+
+    const formData = new FormData();
+    formData.append("file", plano);
+
     try {
-      const res = await fetch(`${BACKEND_URL}/generar-reporte`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comparacion: comparacionData }),
+      const res = await axios.post(`${backendUrl}/extraer-plano`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
+      setDatosPlano(res.data);
+      setMensaje("✅ Plano procesado con éxito");
+    } catch (err) {
+      console.error(err);
+      setMensaje("❌ Error al procesar plano");
+    }
+  };
 
-      if (!res.ok) throw new Error('Error generando reporte');
+  const comparar = async () => {
+    if (!datosEscritura || !datosPlano) {
+      return setMensaje("⚠️ Debes subir primero escritura y plano");
+    }
+    setMensaje("⏳ Comparando escritura con plano...");
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'reporte_confrontacion.pdf';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      setMensajeReporte('📄 Reporte PDF descargado exitosamente.');
-    } catch (error) {
-      toast.error('❌ Error al descargar el reporte PDF');
+    try {
+      const res = await axios.post(`${backendUrl}/comparar-escritura-plano`, {
+        escritura: datosEscritura.datos_tecnicos || [],
+        plano: datosPlano.segmentos_detectados || [],
+      });
+      setResultado(res.data);
+      setMensaje("✅ Comparación realizada");
+    } catch (err) {
+      console.error(err);
+      setMensaje("❌ Error al comparar escritura y plano");
     }
   };
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: 20 }}>
-      <ToastContainer position="top-right" autoClose={4000} />
+    <div className="p-6 space-y-6 max-w-3xl mx-auto">
+      <h1 className="text-xl font-bold">📄 Subir Escritura y Plano</h1>
 
-      <h2>Subir Escritura y Plano</h2>
-
-      {/* Escritura */}
-      <div style={{ marginBottom: 16 }}>
-        <label><strong>Escritura (PDF o imagen):</strong></label><br />
-        <input type="file" accept=".pdf,image/*" onChange={(e) => handleArchivoChange(e, 'escritura')} />
-        <button onClick={enviarEscritura} disabled={cargando} style={{ marginTop: 8 }}>
-          {cargando ? '⏳ Procesando...' : 'Analizar escritura'}
+      {/* Subida escritura */}
+      <div className="space-y-2">
+        <input type="file" onChange={(e) => handleFileChange(e, "escritura")} />
+        <button
+          onClick={subirEscritura}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow"
+        >
+          Subir Escritura
         </button>
-        {escrituraCargada && <p style={{ color: 'green' }}>✅ Escritura cargada con éxito</p>}
       </div>
 
-      {/* Plano */}
-      <div style={{ marginBottom: 16 }}>
-        <label><strong>Plano (PDF escaneado):</strong></label><br />
-        <input type="file" accept=".pdf" onChange={(e) => handleArchivoChange(e, 'plano')} />
-        <button onClick={enviarPlano} disabled={cargando || !escrituraCargada} style={{ marginTop: 8 }}>
-          {cargando ? '⏳ Procesando...' : 'Analizar plano'}
+      {/* Subida plano */}
+      <div className="space-y-2">
+        <input type="file" onChange={(e) => handleFileChange(e, "plano")} />
+        <button
+          onClick={subirPlano}
+          className="px-4 py-2 bg-green-500 text-white rounded-lg shadow"
+        >
+          Subir Plano
         </button>
-        {planoCargado && <p style={{ color: 'green' }}>✅ Plano cargado con éxito</p>}
       </div>
 
       {/* Comparar */}
-      <div style={{ marginTop: 16 }}>
+      <div>
         <button
-          onClick={compararEscrituraPlano}
-          disabled={!escrituraCargada || !planoCargado || cargando}
+          onClick={comparar}
+          className="px-4 py-2 bg-purple-500 text-white rounded-lg shadow"
         >
-          Comparar escritura con plano
+          Comparar
         </button>
       </div>
 
-      {/* Reporte */}
-      {mensajeReporte && (
-        <div style={{ marginTop: 16, color: 'green', fontWeight: 'bold' }}>
-          {mensajeReporte}
-        </div>
-      )}
+      {/* Mensaje de estado */}
+      {mensaje && <p className="text-gray-700">{mensaje}</p>}
 
-      {/* Texto extraído */}
-      {texto && (
-        <div style={{ marginTop: 24 }}>
-          <h3>Texto extraído de escritura:</h3>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{texto}</pre>
-        </div>
-      )}
-
-      {/* Datos técnicos */}
-      {datos.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h3>Rumbos y distancias detectados:</h3>
-          <ul>
-            {datos.map((item, i) => (
-              <li key={i}>
-                <strong>Rumbo:</strong> {item.rumbo} — <strong>Distancia:</strong> {item.distancia} m
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Segmentos */}
-      {segmentos.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h3>Segmentos detectados en el plano:</h3>
-          <ul>
-            {segmentos.map((s, i) => (
-              <li key={i}>
-                ({s.x1}, {s.y1}) → ({s.x2}, {s.y2}) — <strong>Longitud:</strong> {s.longitud_px} px
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Comparación */}
-      {comparacion.length > 0 && (
-        <div style={{ marginTop: 32 }}>
-          <h3>Resultado de la comparación:</h3>
-          <ul>
-            {comparacion.map((item, i) => (
-              <li key={i} style={{ color: item.coincide ? 'green' : 'red' }}>
-                <strong>Escritura:</strong> {item.escritura} <br />
-                <strong>Plano:</strong> {item.plano} <br />
-                <strong>¿Coincide?</strong> {item.coincide ? '✅ Sí' : '❌ No'}
-              </li>
-            ))}
-          </ul>
+      {/* Resultados */}
+      {resultado && (
+        <div className="mt-6 p-4 border rounded-lg bg-gray-50">
+          <h2 className="font-semibold">🔎 Resultado de comparación:</h2>
+          {resultado.comparacion && resultado.comparacion.length > 0 ? (
+            <ul className="list-disc ml-6">
+              {resultado.comparacion.map((c, i) => (
+                <li key={i}>
+                  Escritura: {c.escritura?.rumbo || "—"} -{" "}
+                  {c.escritura?.distancia || "?"} m |
+                  Plano: {c.plano?.longitud_px || "?"} px →{" "}
+                  {c.coincide ? "✅ Coincide" : "❌ No coincide"}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No hubo coincidencias</p>
+          )}
         </div>
       )}
     </div>
   );
-}
+};
+
+export default SubirEscritura;
