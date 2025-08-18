@@ -1,112 +1,150 @@
+import os
+import re
+import cv2
+import pytesseract
+import fitz  # PyMuPDF
+import numpy as np
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
-import fitz  # PyMuPDF
-import pytesseract
-from PIL import Image
-import cv2
-import numpy as np
 from werkzeug.utils import secure_filename
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
-
+# Config Flask
 app = Flask(__name__)
 CORS(app)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "pdf"}
+
+# -----------------------------
+# Helpers
+# -----------------------------
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/extraer-escritura', methods=['POST'])
+def extraer_texto(imagen_path):
+    return pytesseract.image_to_string(imagen_path, lang="spa")
+
+def parsear_datos_tecnicos(texto):
+    """
+    Extrae rumbos y distancias con regex tipo: N 30°E 15.20
+    """
+    lineas = texto.split("\n")
+    datos = []
+    for linea in lineas:
+        match = re.search(r"([NS]\s?\d+°\s?[EO])\s+(\d+(\.\d+)?)", linea)
+        if match:
+            rumbo = match.group(1)
+            distancia = match.group(2)
+            datos.append({"rumbo": rumbo, "distancia": float(distancia)})
+    return datos
+
+# -----------------------------
+# Rutas
+# -----------------------------
+@app.route("/extraer-escritura", methods=["POST"])
 def extraer_escritura():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '' or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file'}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
 
-    filename = secure_filename('escritura_' + file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file = request.files["file"]
+    if file.filename == "" or not allowed_file(file.filename):
+        return jsonify({"error": "Invalid file"}), 400
+
+    filename = secure_filename("escritura_" + file.filename)
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
+
+    # Si es PDF, convertimos a imagen
+    if filename.lower().endswith(".pdf"):
+        pdf = fitz.open(filepath)
+        page = pdf[0]
+        pix = page.get_pixmap()
+        img_path = filepath.replace(".pdf", ".png")
+        pix.save(img_path)
+        filepath = img_path
 
     texto = extraer_texto(filepath)
-    datos_tecnicos = texto.split('\n')
+    datos_tecnicos = parsear_datos_tecnicos(texto)
+
     return jsonify({
-        'texto_extraido': texto,
-        'datos_tecnicos': datos_tecnicos
+        "texto_extraido": texto,
+        "datos_tecnicos": datos_tecnicos
     })
 
-@app.route('/extraer-plano', methods=['POST'])
+@app.route("/extraer-plano", methods=["POST"])
 def extraer_plano():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '' or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file'}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
 
-    filename = secure_filename('plano_' + file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file = request.files["file"]
+    if file.filename == "" or not allowed_file(file.filename):
+        return jsonify({"error": "Invalid file"}), 400
+
+    filename = secure_filename("plano_" + file.filename)
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
 
-    segmentos = detectar_segmentos(filepath)
-    return jsonify({
-        'segmentos_detectados': segmentos
-    })
+    # Si es PDF, convertir a imagen
+    if filename.lower().endswith(".pdf"):
+        pdf = fitz.open(filepath)
+        page = pdf[0]
+        pix = page.get_pixmap()
+        img_path = filepath.replace(".pdf", ".png")
+        pix.save(img_path)
+        filepath = img_path
 
-@app.route('/test-upload', methods=['POST'])
-def test_upload():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No se recibió archivo'}), 400
-    archivo = request.files['file']
-    return jsonify({'mensaje': f'Archivo {archivo.filename} recibido correctamente'}), 200
+    # Cargar imagen
+    img = cv2.imread(filepath)
+    gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gris, 50, 150, apertureSize=3)
+    lineas = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=10)
 
-@app.route('/test-upload/<tipo>', methods=['GET'])
-def test_upload_tipo(tipo):
-    for filename in os.listdir(UPLOAD_FOLDER):
-        if tipo in filename:
-            return jsonify({'estado': 'ok'})
-    return jsonify({'estado': 'no_encontrado'})
-
-def extraer_texto(filepath):
-    if filepath.lower().endswith('.pdf'):
-        texto_completo = ""
-        with fitz.open(filepath) as doc:
-            for page in doc:
-                texto_completo += page.get_text()
-        return texto_completo
-    else:
-        imagen = Image.open(filepath)
-        return pytesseract.image_to_string(imagen)
-
-def detectar_segmentos(filepath):
-    imagen = None
-    if filepath.lower().endswith('.pdf'):
-        doc = fitz.open(filepath)
-        pix = doc.load_page(0).get_pixmap()
-        imagen = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-    else:
-        imagen = cv2.imread(filepath)
-
-    if imagen is None:
-        return []
-
-    gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
-    bordes = cv2.Canny(gris, 50, 150)
-    lineas = cv2.HoughLinesP(bordes, 1, np.pi / 180, threshold=80, minLineLength=50, maxLineGap=10)
     segmentos = []
     if lineas is not None:
         for linea in lineas:
             x1, y1, x2, y2 = linea[0]
-            distancia = np.hypot(x2 - x1, y2 - y1)
+            distancia = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
             segmentos.append({
-                'x1': int(x1), 'y1': int(y1),
-                'x2': int(x2), 'y2': int(y2),
-                'longitud': round(distancia, 2)
+                "x1": int(x1), "y1": int(y1),
+                "x2": int(x2), "y2": int(y2),
+                "longitud_px": round(float(distancia), 2)
             })
-    return segmentos
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    return jsonify({"segmentos_detectados": segmentos})
+
+@app.route("/comparar-escritura-plano", methods=["POST"])
+def comparar_escritura_plano():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No se enviaron datos"}), 400
+
+    escritura = data.get("escritura", [])
+    plano = data.get("plano", [])
+
+    comparacion = []
+    for e in escritura:
+        for s in plano:
+            coincide = False
+            try:
+                dist = float(e.get("distancia", 0))
+                long_plano = float(s.get("longitud_px", 0))
+                coincide = abs(dist - long_plano) < 5  # tolerancia
+            except:
+                pass
+
+            comparacion.append({
+                "escritura": e,
+                "plano": s,
+                "coincide": coincide
+            })
+
+    return jsonify({"comparacion": comparacion})
+
+# -----------------------------
+# Main
+# -----------------------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
