@@ -9,7 +9,7 @@ const SubirEscritura = () => {
   const [resultado, setResultado] = useState(null);
   const [mensaje, setMensaje] = useState("");
 
-  const backendUrl = import.meta.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
+  const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
 
   const handleFileChange = (e, tipo) => {
     if (tipo === "escritura") {
