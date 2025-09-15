@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 
 # Config Flask
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "https://geo-escrituras.vercel.app"}})
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
